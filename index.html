@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scanner Présence Simple</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 500px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        #reader {
+            width: 100%;
+            border: 2px dashed #ccc;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .result {
+            background: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            border-left: 4px solid #28a745;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            border-left: 4px solid #dc3545;
+        }
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            border-left: 4px solid #17a2b8;
+        }
+        .btn {
+            background: #007bff;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            width: 100%;
+            font-size: 16px;
+            margin: 10px 0;
+        }
+        .btn:hover { background: #0056b3; }
+        .btn:disabled { background: #ccc; cursor: not-allowed; }
+        .stats {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            text-align: center;
+        }
+        .manual-input {
+            margin: 20px 0;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 5px;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            box-sizing: border-box;
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📱 Scanner Présence</h1>
+        
+        <div id="reader"></div>
+        
+        <div class="manual-input">
+            <h3>ou saisie manuelle :</h3>
+            <input type="text" id="manualId" placeholder="Entrez l'ID ou nom">
+            <button class="btn" onclick="validateManualEntry()">Valider présence</button>
+        </div>
+        
+        <div class="stats">
+            <strong>Présences du jour : <span id="todayCount">0</span></strong>
+        </div>
+        
+        <div class="info">
+            <strong>⚠️ Note :</strong> Les données sont stockées temporairement. 
+            Téléchargez le CSV avant de fermer l'application !
+        </div>
+        
+        <div id="result"></div>
+        
+        <button class="btn" onclick="showHistory()">📋 Voir l'historique</button>
+        <button class="btn" onclick="downloadCSV()">💾 Télécharger CSV</button>
+    </div>
+
+    <script>
+        // Stockage en mémoire (remplace localStorage)
+        let presences = [];
+        let isScanning = false;
+        
+        // Mettre à jour le compteur
+        function updateCounter() {
+            const today = new Date().toDateString();
+            const todayPresences = presences.filter(p => new Date(p.timestamp).toDateString() === today);
+            document.getElementById('todayCount').textContent = todayPresences.length;
+        }
+        
+        // Fonction de scan QR
+        function onScanSuccess(decodedText) {
+            if (isScanning) return; // Éviter les doublons
+            isScanning = true;
+            
+            console.log('QR scanné:', decodedText);
+            
+            let userId;
+            try {
+                // Essayer de parser comme JSON
+                const data = JSON.parse(decodedText);
+                userId = data.user_id || data.id || data.name || decodedText;
+            } catch (e) {
+                // Si pas JSON, utiliser directement
+                userId = decodedText;
+            }
+            
+            validatePresence(userId);
+            
+            // Réactiver le scan après 2 secondes
+            setTimeout(() => { isScanning = false; }, 2000);
+        }
+        
+        // Valider une présence
+        function validatePresence(userId) {
+            const now = new Date();
+            const presence = {
+                id: userId,
+                timestamp: now.toISOString(),
+                date: now.toLocaleDateString('fr-FR'),
+                time: now.toLocaleTimeString('fr-FR')
+            };
+            
+            // Vérifier si déjà présent aujourd'hui
+            const today = now.toDateString();
+            const alreadyPresent = presences.some(p => 
+                p.id === userId && new Date(p.timestamp).toDateString() === today
+            );
+            
+            if (alreadyPresent) {
+                showMessage('⚠️ Déjà marqué présent aujourd\'hui !', 'error');
+                return;
+            }
+            
+            // Ajouter la présence
+            presences.push(presence);
+            
+            showMessage(`✅ Présence validée !<br>
+                        <strong>${userId}</strong><br>
+                        ${presence.date} à ${presence.time}`, 'result');
+            
+            updateCounter();
+        }
+        
+        // Saisie manuelle
+        function validateManualEntry() {
+            const userId = document.getElementById('manualId').value.trim();
+            if (!userId) {
+                showMessage('❌ Veuillez entrer un ID', 'error');
+                return;
+            }
+            
+            validatePresence(userId);
+            document.getElementById('manualId').value = '';
+        }
+        
+        // Afficher un message
+        function showMessage(message, type) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = `<div class="${type}">${message}</div>`;
+            
+            // Faire disparaître après 5 secondes
+            setTimeout(() => {
+                resultDiv.innerHTML = '';
+            }, 5000);
+        }
+        
+        // Afficher l'historique
+        function showHistory() {
+            if (presences.length === 0) {
+                showMessage('📋 Aucune présence enregistrée', 'info');
+                return;
+            }
+            
+            const last10 = presences.slice(-10).reverse();
+            let historyHTML = '<div class="info"><strong>📋 Dernières présences :</strong><br>';
+            
+            last10.forEach(p => {
+                historyHTML += `• ${p.id} - ${p.date} ${p.time}<br>`;
+            });
+            
+            historyHTML += '</div>';
+            document.getElementById('result').innerHTML = historyHTML;
+        }
+        
+        // Télécharger CSV
+        function downloadCSV() {
+            if (presences.length === 0) {
+                showMessage('❌ Aucune donnée à télécharger', 'error');
+                return;
+            }
+            
+            let csv = 'ID,Date,Heure,Timestamp\n';
+            presences.forEach(p => {
+                csv += `"${p.id}","${p.date}","${p.time}","${p.timestamp}"\n`;
+            });
+            
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `presences_${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+            window.URL.revokeObjectURL(url);
+            
+            showMessage('💾 Fichier CSV téléchargé !', 'result');
+        }
+        
+        // Initialiser le scanner QR
+        function initScanner() {
+            const html5QrCode = new Html5Qrcode("reader");
+            
+            // D'abord demander les permissions caméra
+            Html5Qrcode.getCameras().then(devices => {
+                if (devices && devices.length) {
+                    // Utiliser la caméra arrière si disponible
+                    const cameraId = devices.length > 1 ? devices[1].id : devices[0].id;
+                    
+                    html5QrCode.start(
+                        cameraId,
+                        {
+                            fps: 10,
+                            qrbox: { width: 250, height: 250 }
+                        },
+                        onScanSuccess,
+                        onScanFailure
+                    ).catch(err => {
+                        console.error('Erreur démarrage caméra:', err);
+                        showCameraError();
+                    });
+                } else {
+                    showCameraError();
+                }
+            }).catch(err => {
+                console.error('Erreur accès caméras:', err);
+                showCameraError();
+            });
+        }
+        
+        function onScanFailure(error) {
+            // Ne rien faire - erreurs normales de scan
+        }
+        
+        function showCameraError() {
+            document.getElementById('reader').innerHTML = 
+                '<div class="error">❌ Caméra non accessible<br>• Autorisez l\'accès caméra<br>• Utilisez HTTPS<br>• Ou utilisez la saisie manuelle</div>';
+        }
+        
+        // Démarrer au chargement
+        window.onload = function() {
+            updateCounter();
+            initScanner();
+            
+            // Message d'info
+            showMessage('📱 Scannez un QR code ou utilisez la saisie manuelle', 'info');
+        };
+        
+        // Gérer la saisie Enter
+        document.getElementById('manualId').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                validateManualEntry();
+            }
+        });
+    </script>
+</body>
+</html>
